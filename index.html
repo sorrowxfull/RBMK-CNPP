@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RBMK-1000 Core Visualization</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1>RBMK-1000 CONTROL SYSTEM</h1>
+            <div class="status-indicator" id="system-status">NORMAL</div>
+        </header>
+
+        <main>
+            <div class="reactor-container">
+                <canvas id="reactor-canvas"></canvas>
+                <div class="legend">
+                    <div class="legend-item"><span class="symbol rod"></span> Control Rod</div>
+                    <div class="legend-item"><span class="symbol water"></span> Water</div>
+                    <div class="legend-item"><span class="symbol xenon"></span> Xenon</div>
+                    <div class="legend-item"><span class="symbol moderator"></span> Moderator</div>
+                    <div class="legend-item"><span class="symbol uranium"></span> Uranium</div>
+                    <div class="legend-item"><span class="symbol spent"></span> Non-Uranium</div>
+                    <div class="legend-item"><span class="symbol thermal"></span> Thermal Neutron</div>
+                    <div class="legend-item"><span class="symbol fast"></span> Fast Neutron</div>
+                </div>
+            </div>
+
+            <aside class="control-panel">
+                <div class="panel-section">
+                    <h2>PARAMETERS</h2>
+                    <div class="parameter">
+                        <label>THERMAL POWER</label>
+                        <div class="value-display"><span id="power-val">0</span> MW</div>
+                        <div class="bar-graph">
+                            <div id="power-bar" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    <div class="parameter">
+                        <label>CORE TEMP</label>
+                        <div class="value-display"><span id="temp-val">0</span> °C</div>
+                        <div class="bar-graph">
+                            <div id="temp-bar" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    <div class="parameter">
+                        <label>RADIATION</label>
+                        <div class="value-display"><span id="rad-val">0</span> R/h</div>
+                        <div class="bar-graph">
+                            <div id="rad-bar" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel-section">
+                    <h2>CONTROLS</h2>
+                    <div class="control-group">
+                        <label for="rod-control">CONTROL RODS POSITION</label>
+                        <input type="range" id="rod-control" min="0" max="100" value="100" step="1">
+                        <div class="value-display"><span id="rod-val">100</span>% INSERTED</div>
+                    </div>
+
+                    <div class="control-group">
+                        <label for="speed-control">NEUTRON SPEED</label>
+                        <input type="range" id="speed-control" min="0.1" max="5" value="1" step="0.1">
+                        <div class="value-display">x<span id="speed-val">1</span></div>
+                    </div>
+
+                    <button id="az5-btn" class="danger-btn">AZ-5 (SCRAM)</button>
+
+                    <div class="toggle-group">
+                        <label class="switch">
+                            <input type="checkbox" id="audio-toggle">
+                            <span class="slider round"></span>
+                        </label>
+                        <span>GEIGER AUDIO</span>
+                    </div>
+                </div>
+            </aside>
+        </main>
+    </div>
+    <script src="script.js"></script>
+</body>
+
+</html>
