@@ -32,6 +32,8 @@ const canvas = document.getElementById('reactor-canvas');
 const ctx = canvas.getContext('2d');
 const powerValEl = document.getElementById('power-val');
 const powerBarEl = document.getElementById('power-bar');
+const powerPercentValEl = document.getElementById('power-percent-val');
+const powerPercentBarEl = document.getElementById('power-percent-bar');
 const tempValEl = document.getElementById('temp-val');
 const tempBarEl = document.getElementById('temp-bar');
 const radValEl = document.getElementById('rad-val');
@@ -114,8 +116,9 @@ function init() {
                 y: y,
                 type: colType,
                 fuelState: FUEL_URANIUM, // Default
-                temp: 300,
-                timer: 0 // For decay/regen
+                temp: 20, // Start cool
+                timer: 0, // For decay/regen
+                boil: 0 // Boiling effect intensity
             };
 
             // Randomize fuel slightly
@@ -130,6 +133,12 @@ function init() {
 
     // Listeners
     rodControlEl.addEventListener('input', (e) => {
+        if (state.isScrammed) {
+            state.isScrammed = false;
+            statusEl.textContent = "NORMAL";
+            statusEl.style.color = "var(--text-color)";
+            statusEl.style.borderColor = "var(--text-color)";
+        }
         state.controlRodPosition = parseInt(e.target.value);
         rodValEl.textContent = state.controlRodPosition;
     });
@@ -154,26 +163,66 @@ function initAudio() {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 }
 
+// Create a noise buffer for realistic Geiger clicks
+let noiseBuffer;
+function getGeigerNoise() {
+    if (!audioCtx) return null;
+    if (!noiseBuffer) {
+        // Shorter buffer for a "pop" rather than a "click"
+        const bufferSize = audioCtx.sampleRate * 0.005; // 5ms
+        noiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+        const data = noiseBuffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) {
+            // Soften the noise (less harsh static)
+            data[i] = (Math.random() * 2 - 1) * 0.5;
+        }
+    }
+    return noiseBuffer;
+}
+
 function playGeigerClick() {
     if (!state.audioEnabled || !audioCtx) return;
+
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+
     const t = audioCtx.currentTime;
-    const osc = audioCtx.createOscillator();
+
+    const source = audioCtx.createBufferSource();
+    source.buffer = getGeigerNoise();
+
+    // Bandpass filter to make it sound more like a tube discharge
+    const filter = audioCtx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = 1200;
+    filter.Q.value = 1;
+
     const gain = audioCtx.createGain();
-    osc.type = 'square';
-    osc.frequency.value = 100 + Math.random() * 50;
-    gain.gain.setValueAtTime(0.1, t);
-    gain.gain.exponentialRampToValueAtTime(0.01, t + 0.05);
-    osc.connect(gain);
+    // Much quieter
+    gain.gain.value = 0.1 + Math.random() * 0.1;
+
+    source.connect(filter);
+    filter.connect(gain);
     gain.connect(audioCtx.destination);
-    osc.start(t);
-    osc.stop(t + 0.05);
+
+    // Slight pitch variation
+    source.playbackRate.value = 0.9 + Math.random() * 0.2;
+
+    source.start(t);
 }
 
 function updateAudio() {
     if (!state.audioEnabled || !audioCtx) return;
-    const clickRate = Math.max(1, Math.log10(state.radiation) * 5);
+
+    // Proportional to neutron count (particles)
+    // Base rate (background radiation) + particle contribution
+    // 0 particles = ~2 clicks/sec
+    // 500 particles = ~52 clicks/sec (continuous crackle)
+    const activeNeutrons = state.particles.length;
+    const clickRate = 2 + (activeNeutrons / 10);
+
     if (Date.now() > nextClickTime) {
         playGeigerClick();
+        // Randomize interval for natural irregularity
         nextClickTime = Date.now() + (1000 / clickRate) * (0.5 + Math.random());
     }
 }
@@ -183,7 +232,14 @@ function scram() {
     state.isScrammed = true;
     statusEl.textContent = "SCRAM IN PROGRESS";
     statusEl.style.color = "red";
+    statusEl.style.borderColor = "red";
+
     const interval = setInterval(() => {
+        if (!state.isScrammed) {
+            clearInterval(interval);
+            return;
+        }
+
         if (state.controlRodPosition < 100) {
             state.controlRodPosition += 1;
             rodControlEl.value = state.controlRodPosition;
@@ -191,33 +247,52 @@ function scram() {
         } else {
             clearInterval(interval);
             statusEl.textContent = "SHUTDOWN";
+            state.isScrammed = false;
+            setTimeout(() => {
+                if (statusEl.textContent === "SHUTDOWN") {
+                    statusEl.textContent = "NORMAL";
+                    statusEl.style.color = "var(--text-color)";
+                    statusEl.style.borderColor = "var(--text-color)";
+                }
+            }, 2000);
         }
     }, 50);
 }
 
 function updatePhysics() {
+    let totalGridHeat = 0;
+    let activeFuelCount = 0;
+
     // 1. Grid Updates (Decay/Regen)
     for (let x = 0; x < COLS; x++) {
         for (let y = 0; y < ROWS; y++) {
             let cell = state.grid[x][y];
+
+            // Decay boiling effect
+            if (cell.boil > 0) cell.boil *= 0.9;
+
+            // Water Cooling / Heat Decay
+            if (cell.temp > 20) {
+                cell.temp -= 0.5 * SPEED_MULTIPLIER;
+            }
+            if (cell.temp < 20) cell.temp = 20;
+
+            totalGridHeat += cell.temp;
+
             if (cell.type === TYPE_FUEL) {
+                if (cell.fuelState === FUEL_URANIUM) activeFuelCount++;
+
                 // Decay Logic
                 if (cell.fuelState === FUEL_SPENT) {
-                    // Chance to turn into Xenon or Uranium
                     if (Math.random() < 0.001 * SPEED_MULTIPLIER) {
-                        if (Math.random() < 0.7) cell.fuelState = FUEL_URANIUM; // Regenerate
-                        else cell.fuelState = FUEL_XENON; // Poison
+                        if (Math.random() < 0.7) cell.fuelState = FUEL_URANIUM;
+                        else cell.fuelState = FUEL_XENON;
                     }
                 } else if (cell.fuelState === FUEL_XENON) {
-                    // Xenon decays back to Uranium eventually? Or just stays?
-                    // Let's say it decays slowly back to Spent or Uranium
                     if (Math.random() < 0.0005 * SPEED_MULTIPLIER) {
                         cell.fuelState = FUEL_SPENT;
                     }
                 }
-
-                // Cooling
-                if (cell.temp > 300) cell.temp -= 0.5 * SPEED_MULTIPLIER;
             }
         }
     }
@@ -227,19 +302,23 @@ function updatePhysics() {
         let p = state.particles[i];
         p.update();
 
-        // Check Grid Collision
         let gx = Math.floor(p.x / CELL_SIZE);
         let gy = Math.floor(p.y / CELL_SIZE);
 
         if (gx >= 0 && gx < COLS && gy >= 0 && gy < ROWS) {
             let cell = state.grid[gx][gy];
 
+            // Boiling Effect & Heating
+            // Scale with SPEED_MULTIPLIER to compensate for skipping cells at high speeds
+            if (cell.type !== TYPE_ROD && cell.type !== TYPE_MODERATOR) {
+                cell.boil = Math.min(100, cell.boil + 30 * SPEED_MULTIPLIER);
+                cell.temp += 2 * SPEED_MULTIPLIER; // Heat up water/fuel proportional to speed
+            }
+
             // Interaction Logic
             if (cell.type === TYPE_MODERATOR) {
-                // Moderator slows fast neutrons to thermal
                 if (p.type === 'fast') {
                     p.type = 'thermal';
-                    // Slow down velocity vector
                     let currentSpeed = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
                     let scale = NEUTRON_SPEED_THERMAL / currentSpeed;
                     p.vx *= scale;
@@ -248,34 +327,33 @@ function updatePhysics() {
             } else if (cell.type === TYPE_ROD) {
                 let rodDepth = (state.controlRodPosition / 100) * ROWS;
                 if (gy < rodDepth) {
-                    // Absorbed
                     state.particles.splice(i, 1);
                     continue;
                 }
             } else if (cell.type === TYPE_FUEL) {
                 if (p.type === 'thermal') {
                     if (cell.fuelState === FUEL_URANIUM) {
-                        // Fission!
-                        if (Math.random() < 0.2) { // Increased chance
+                        if (Math.random() < 0.2) {
                             state.particles.splice(i, 1);
 
-                            // Turn Uranium into Spent Fuel
-                            cell.fuelState = FUEL_SPENT;
+                            // Uranium Resilience Logic
+                            let chanceToSpend = 1.0;
+                            if (cell.temp > 500) chanceToSpend = 0.33;
 
-                            // Release 2-3 fast neutrons
+                            if (Math.random() < chanceToSpend) {
+                                cell.fuelState = FUEL_SPENT;
+                            }
+
                             for (let n = 0; n < 2; n++) {
                                 state.particles.push(new Particle(p.x, p.y, 'fast'));
                             }
-                            // Heat up
-                            cell.temp += 20;
-                            state.power += 1;
+                            cell.temp += 50;
+                            state.power += 10;
                             continue;
                         }
                     } else if (cell.fuelState === FUEL_XENON) {
-                        // Xenon absorbs thermal neutrons
                         if (Math.random() < 0.5) {
                             state.particles.splice(i, 1);
-                            // Burn off xenon -> Spent
                             cell.fuelState = FUEL_SPENT;
                             continue;
                         }
@@ -287,23 +365,26 @@ function updatePhysics() {
         if (p.life <= 0) state.particles.splice(i, 1);
     }
 
-    // Spontaneous Fission (Source)
+    // Spontaneous Fission
     if (state.particles.length < MAX_PARTICLES && Math.random() < 0.1 * SPEED_MULTIPLIER) {
-        // Random start point
         let rx = Math.random() * CANVAS_WIDTH;
         let ry = Math.random() * CANVAS_HEIGHT;
         state.particles.push(new Particle(rx, ry, 'fast'));
     }
 
     // Global Stats Update
-    state.power *= 0.98; // Decay
-    state.temperature = 300 + state.power * 0.5;
-    state.radiation = 15 + state.power * 0.2;
+    let targetPower = state.particles.length * 6.5;
+    state.power += (targetPower - state.power) * 0.1;
+
+    let avgTemp = totalGridHeat / (COLS * ROWS);
+    state.temperature += (avgTemp - state.temperature) * 0.05;
+
+    state.radiation = 15 + state.power * 0.5;
 }
 
 function draw() {
     // Clear
-    ctx.fillStyle = '#d0e8f2'; // Water background
+    ctx.fillStyle = '#d0e8f2'; // Base Water background
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     // Draw Grid
@@ -313,29 +394,54 @@ function draw() {
             let px = x * CELL_SIZE;
             let py = y * CELL_SIZE;
 
+            // Draw Water Heat Effect (Pink -> Red)
+            if (cell.temp > 50) {
+                let intensity = Math.min(1, (cell.temp - 50) / 450);
+                let r = 255;
+                let g = 192 * (1 - intensity);
+                let b = 203 * (1 - intensity);
+                let a = Math.min(0.8, intensity * 0.8);
+
+                ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${a})`;
+                ctx.fillRect(px, py, CELL_SIZE, CELL_SIZE);
+            }
+
+            // Draw Boiling Effect (Bubbles)
+            if (cell.boil > 1) {
+                ctx.fillStyle = `rgba(255, 255, 255, ${cell.boil / 150})`;
+                ctx.fillRect(px, py, CELL_SIZE, CELL_SIZE);
+
+                if (cell.boil > 50) {
+                    ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+                    ctx.beginPath();
+                    ctx.arc(px + CELL_SIZE * 0.3, py + CELL_SIZE * 0.3, 2, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.beginPath();
+                    ctx.arc(px + CELL_SIZE * 0.7, py + CELL_SIZE * 0.6, 3, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+
             if (cell.type === TYPE_MODERATOR) {
                 ctx.fillStyle = '#fff';
                 ctx.fillRect(px + 5, py, CELL_SIZE - 10, CELL_SIZE);
                 ctx.strokeStyle = '#999';
                 ctx.strokeRect(px + 5, py, CELL_SIZE - 10, CELL_SIZE);
             } else if (cell.type === TYPE_ROD) {
-                // Draw Rod if present
                 let rodDepth = (state.controlRodPosition / 100) * ROWS;
                 if (y < rodDepth) {
-                    ctx.fillStyle = '#444'; // Dark Grey Rod
+                    ctx.fillStyle = '#444';
                     ctx.fillRect(px + 5, py, CELL_SIZE - 10, CELL_SIZE);
                 } else {
-                    // Empty channel (water)
                     ctx.strokeStyle = '#aaa';
                     ctx.strokeRect(px + 5, py, CELL_SIZE - 10, CELL_SIZE);
                 }
             } else if (cell.type === TYPE_FUEL) {
-                // Draw Fuel Dot
-                let color = '#ccc'; // Non-uranium (Grey)
-                if (cell.fuelState === FUEL_URANIUM) color = '#00cc00'; // Green
-                else if (cell.fuelState === FUEL_XENON) color = '#222'; // Dark
+                let color = '#ccc';
+                if (cell.fuelState === FUEL_URANIUM) color = '#00cc00';
+                else if (cell.fuelState === FUEL_XENON) color = '#222';
 
-                // Heat glow
+                // Heat glow for fuel specifically
                 if (cell.temp > 500) {
                     ctx.shadowBlur = (cell.temp - 500) / 50;
                     ctx.shadowColor = 'red';
@@ -347,7 +453,7 @@ function draw() {
                 ctx.arc(px + CELL_SIZE / 2, py + CELL_SIZE / 2, CELL_SIZE / 3, 0, Math.PI * 2);
                 ctx.fillStyle = color;
                 ctx.fill();
-                ctx.shadowBlur = 0; // Reset
+                ctx.shadowBlur = 0;
             }
         }
     }
@@ -356,10 +462,29 @@ function draw() {
     state.particles.forEach(p => p.draw());
 
     // Update UI
+    // Max Power roughly 3200 MW for 100%
     powerValEl.textContent = Math.floor(state.power);
-    powerBarEl.style.width = Math.min(100, state.power) + '%';
+    powerBarEl.style.width = Math.min(100, (state.power / 3200) * 100) + '%';
+
+    // Power % - Allow > 100%
+    let pPercent = (state.power / 3200) * 100;
+    if (powerPercentValEl) {
+        powerPercentValEl.textContent = pPercent.toFixed(1);
+        if (pPercent > 100) powerPercentValEl.style.color = 'red';
+        else powerPercentValEl.style.color = 'var(--text-color)';
+    }
+    if (powerPercentBarEl) {
+        powerPercentBarEl.style.width = Math.min(100, pPercent) + '%';
+        if (pPercent > 100) powerPercentBarEl.style.backgroundColor = 'red';
+        else powerPercentBarEl.style.backgroundColor = 'var(--text-color)';
+    }
+
     tempValEl.textContent = Math.floor(state.temperature);
+    // Max temp ~2000
+    tempBarEl.style.width = Math.min(100, (state.temperature / 2000) * 100) + '%';
+
     radValEl.textContent = Math.floor(state.radiation);
+    radBarEl.style.width = Math.min(100, (Math.log10(state.radiation) / 5) * 100) + '%';
 }
 
 function loop() {
