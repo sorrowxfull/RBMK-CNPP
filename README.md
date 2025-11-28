@@ -22,6 +22,9 @@ An interactive web-based simulation of the Chernobyl RBMK-1000 reactor core, ins
 ## Controls
 
 *   **Control Rods Position**: Slide to insert or withdraw control rods. Withdrawing rods increases reactivity.
+*   **Water Flow**: Control the rate of coolant flow.
+    *   **0%**: Low flow. Water heats up rapidly (simulating pump failure).
+    *   **100%**: High flow. Water cools down quickly.
 *   **Neutron Speed**: Adjust the simulation speed. Physics (heating/boiling) scale proportionally.
 *   **AZ-5 (SCRAM)**: Emergency shutdown button. Rapidly inserts all control rods to kill the reaction.
 *   **Geiger Audio**: Toggle the radiation sound effects.

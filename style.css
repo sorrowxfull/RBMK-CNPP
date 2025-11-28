@@ -60,11 +60,14 @@ main {
     flex: 1;
     gap: 20px;
     overflow: hidden;
+    align-items: stretch;
+    /* Force equal height */
+    min-height: 0;
 }
 
 .reactor-container {
     flex: 2;
-    background: #e0e0e0;
+    background: var(--panel-bg);
     /* Light background for water/contrast */
     border: 1px solid #333;
     display: flex;
@@ -74,13 +77,19 @@ main {
     position: relative;
     overflow: hidden;
     padding: 10px;
+    height: 100%;
+    /* Fill parent height */
 }
 
 canvas {
-    background-color: #d0e8f2;
+    background-color: #a0b8c2;
     /* Water color base */
     box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
     margin-bottom: 15px;
+    max-width: 100%;
+    max-height: 100%;
+    width: auto;
+    height: auto;
 }
 
 .legend {
@@ -92,7 +101,7 @@ canvas {
     padding: 10px;
     border-radius: 5px;
     color: #fff;
-    font-size: 12px;
+    font-size: 14px;
 }
 
 .legend-item {
@@ -113,7 +122,7 @@ canvas {
 }
 
 .symbol.water {
-    background: #d0e8f2;
+    background: #a0b8c2;
     border: 1px solid #aaa;
 }
 
@@ -128,7 +137,7 @@ canvas {
 }
 
 .symbol.uranium {
-    background: #00cc00;
+    background: #aaffaa;
     border-radius: 50%;
 }
 
@@ -158,6 +167,9 @@ canvas {
     flex-direction: column;
     gap: 20px;
     min-width: 300px;
+    height: 100%;
+    /* Fill parent height */
+    overflow: hidden;
 }
 
 .panel-section {
@@ -165,6 +177,13 @@ canvas {
     border: 1px solid #333;
     padding: 20px;
     border-radius: 4px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    min-height: 0;
+    /* Allow shrinking */
+    overflow-y: auto;
 }
 
 h2 {
@@ -187,7 +206,7 @@ h2 {
 }
 
 .value-display {
-    font-size: 20px;
+    font-size: 16px;
     margin-bottom: 5px;
 }
 
@@ -218,7 +237,7 @@ input[type="range"] {
     background: #300;
     color: var(--danger-color);
     border: 2px solid var(--danger-color);
-    padding: 15px;
+    padding: 10px;
     width: 100%;
     font-family: var(--font-main);
     font-size: 18px;

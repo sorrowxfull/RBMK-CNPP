@@ -20,7 +20,9 @@ let state = {
     grid: [], // 2D array of cells
     particles: [],
     audioEnabled: false,
-    isScrammed: false
+    audioEnabled: false,
+    isScrammed: false,
+    waterFlow: 50 // % Flow rate
 };
 
 // Audio
@@ -42,6 +44,8 @@ const rodControlEl = document.getElementById('rod-control');
 const rodValEl = document.getElementById('rod-val');
 const speedControlEl = document.getElementById('speed-control');
 const speedValEl = document.getElementById('speed-val');
+const flowControlEl = document.getElementById('flow-control');
+const flowValEl = document.getElementById('flow-val');
 const az5Btn = document.getElementById('az5-btn');
 const audioToggle = document.getElementById('audio-toggle');
 const statusEl = document.getElementById('system-status');
@@ -147,6 +151,13 @@ function init() {
         speedControlEl.addEventListener('input', (e) => {
             SPEED_MULTIPLIER = parseFloat(e.target.value);
             if (speedValEl) speedValEl.textContent = SPEED_MULTIPLIER;
+        });
+    }
+
+    if (flowControlEl) {
+        flowControlEl.addEventListener('input', (e) => {
+            state.waterFlow = parseInt(e.target.value);
+            if (flowValEl) flowValEl.textContent = state.waterFlow;
         });
     }
 
@@ -272,8 +283,13 @@ function updatePhysics() {
             if (cell.boil > 0) cell.boil *= 0.9;
 
             // Water Cooling / Heat Decay
+            // Flow 0% -> Cooling 0.2x (Very slow)
+            // Flow 50% -> Cooling 1.0x (Normal)
+            // Flow 100% -> Cooling 1.8x (Fast)
+            let coolingFactor = 0.2 + 1.6 * (state.waterFlow / 100);
+
             if (cell.temp > 20) {
-                cell.temp -= 0.5 * SPEED_MULTIPLIER;
+                cell.temp -= 0.5 * SPEED_MULTIPLIER * coolingFactor;
             }
             if (cell.temp < 20) cell.temp = 20;
 
@@ -312,7 +328,14 @@ function updatePhysics() {
             // Scale with SPEED_MULTIPLIER to compensate for skipping cells at high speeds
             if (cell.type !== TYPE_ROD && cell.type !== TYPE_MODERATOR) {
                 cell.boil = Math.min(100, cell.boil + 30 * SPEED_MULTIPLIER);
-                cell.temp += 2 * SPEED_MULTIPLIER; // Heat up water/fuel proportional to speed
+
+                // Heating Rate
+                // Flow 0% -> Heating 1.5x (Fast)
+                // Flow 50% -> Heating 1.0x (Normal)
+                // Flow 100% -> Heating 0.5x (Slow)
+                let heatingFactor = 1.5 - (state.waterFlow / 100);
+
+                cell.temp += 2 * SPEED_MULTIPLIER * heatingFactor; // Heat up water/fuel proportional to speed
             }
 
             // Interaction Logic
@@ -384,7 +407,8 @@ function updatePhysics() {
 
 function draw() {
     // Clear
-    ctx.fillStyle = '#d0e8f2'; // Base Water background
+    // Clear
+    ctx.fillStyle = '#a0b8c2'; // Base Water background (Darker)
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     // Draw Grid
@@ -438,7 +462,7 @@ function draw() {
                 }
             } else if (cell.type === TYPE_FUEL) {
                 let color = '#ccc';
-                if (cell.fuelState === FUEL_URANIUM) color = '#00cc00';
+                if (cell.fuelState === FUEL_URANIUM) color = '#aaffaa'; // Matches CSS
                 else if (cell.fuelState === FUEL_XENON) color = '#222';
 
                 // Heat glow for fuel specifically
